@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leader-election
+spec:
+  selector:
+    matchLabels:
+      app: leader-election
+  replicas: 4
+  template:
+    metadata:
+      labels:
+        app: leader-election
+    spec:
+      automountServiceAccountToken: true
+      serviceAccount: leader-election
+      serviceAccountName: leader-election
+      containers:
+        - name: leader-election
+          image: lucferbux/leader-election
+          args:
+            - -node-id=$(POD_NAME)
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: "200m"
+              memory: 1Gi
+          
