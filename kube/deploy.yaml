@@ -1,12 +1,22 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: leader-election
+  labels:
+    name: leader-election
+
+---
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: leader-election
+  namespace: leader-election
 spec:
   selector:
     matchLabels:
       app: leader-election
-  replicas: 4
+  replicas: 3
   template:
     metadata:
       labels:
@@ -20,12 +30,18 @@ spec:
           image: lucferbux/leader-election
           args:
             - -node-id=$(POD_NAME)
+            - -namespace=$(NAMESPACE)
           env:
             - name: POD_NAME
               valueFrom:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
           resources:
             limits:
               cpu: "1"

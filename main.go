@@ -19,6 +19,7 @@ import (
 func main() {
 	var kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
 	var nodeID = flag.String("node-id", "", "node id used for leader election")
+	var namespace = flag.String("namespace", "default", "namespace used for leader election")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -31,8 +32,8 @@ func main() {
 
 	var lock = &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{
-			Name:      "my-lock",
-			Namespace: "default",
+			Name:      "leader-election-lock",
+			Namespace: *namespace,
 		},
 		Client: clientset.CoordinationV1(),
 		LockConfig: resourcelock.ResourceLockConfig{
@@ -52,15 +53,19 @@ func main() {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				atomic.StoreInt32(&leading, 1)
-				log.WithField("id", *nodeID).Info("started leading")
-				for range ticker.C {
-					if atomic.LoadInt32(&leading) == 0 {
-						log.Info("stopped working")
-						return
-					}
-					log.Info("working...")
-					time.Sleep(time.Second)
-				}
+				log.WithFields(log.Fields{
+					"node":      *nodeID,
+					"namespace": *namespace,
+					"lock":      *lock,
+				}).Info("started leading")
+				// for range ticker.C {
+				// 	if atomic.LoadInt32(&leading) == 0 {
+				// 		log.Info("stopped working")
+				// 		return
+				// 	}
+				// 	log.Info("working...")
+				// 	time.Sleep(time.Second)
+				// }
 			},
 			OnStoppedLeading: func() {
 				atomic.StoreInt32(&leading, 0)
@@ -68,6 +73,7 @@ func main() {
 			},
 			OnNewLeader: func(identity string) {
 				if identity == *nodeID {
+					// Change the name of the lease
 					return
 				}
 				log.WithField("id", *nodeID).

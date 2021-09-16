@@ -16,5 +16,5 @@ kubectl apply -f kube/
 
 ```shell script
 kubectl delete -f kube/
-kubectl delete lease my-lock
+kubectl delete lease leader-election --namespace=leader-election
 ```
