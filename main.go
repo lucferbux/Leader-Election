@@ -6,6 +6,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"io/ioutil"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
 	"github.com/apex/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -15,6 +20,15 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 )
+
+// album represents data about a record album.
+type Leader struct {
+	Name string `json:"name"`
+}
+
+var leaderElected = Leader{
+	Name: "",
+}
 
 func main() {
 	var kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
@@ -30,7 +44,7 @@ func main() {
 		log.WithError(err).Fatal("failed to connect to cluster")
 	}
 
-	var lock = &resourcelock.LeaseLock{
+	lock := &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{
 			Name:      "leader-election-lock",
 			Namespace: *namespace,
@@ -41,8 +55,13 @@ func main() {
 		},
 	}
 
-	var ticker = time.NewTicker(time.Second)
-	defer ticker.Stop()
+	// Routing to check the leader elected
+	gin.SetMode(gin.ReleaseMode)
+	gin.DefaultWriter = ioutil.Discard
+	router := gin.Default()
+	router.GET("/", getLeaderElected)
+	go router.Run("localhost:4040")
+
 	var leading int32
 	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
 		Lock:            lock,
@@ -53,32 +72,23 @@ func main() {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				atomic.StoreInt32(&leading, 1)
-				log.WithFields(log.Fields{
-					"node":      *nodeID,
-					"namespace": *namespace,
-					"lock":      *lock,
-				}).Info("started leading")
-				// for range ticker.C {
-				// 	if atomic.LoadInt32(&leading) == 0 {
-				// 		log.Info("stopped working")
-				// 		return
-				// 	}
-				// 	log.Info("working...")
-				// 	time.Sleep(time.Second)
-				// }
+				log.WithField("node", *nodeID).Info("started leading")
 			},
 			OnStoppedLeading: func() {
 				atomic.StoreInt32(&leading, 0)
 				log.WithField("id", *nodeID).Info("stopped leading")
 			},
 			OnNewLeader: func(identity string) {
+				leaderElected.Name = identity
 				if identity == *nodeID {
-					// Change the name of the lease
+					log.
+						WithField("node", *nodeID).
+						Info("waiting to be elected...")
 					return
 				}
-				log.WithField("id", *nodeID).
+				log.
 					WithField("leader", identity).
-					Info("new leader")
+					Info("new leader elected")
 			},
 		},
 	})
@@ -97,4 +107,8 @@ func getConfig(cfg string) (*rest.Config, error) {
 		return rest.InClusterConfig()
 	}
 	return clientcmd.BuildConfigFromFlags("", cfg)
+}
+
+func getLeaderElected(c *gin.Context) {
+	c.IndentedJSON(http.StatusOK, leaderElected)
 }
